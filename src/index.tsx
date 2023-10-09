@@ -1,38 +1,76 @@
-export const reducer = (state: any, action: any) => {
-    switch (action.type) {
-        case 'USER-NAME-UPDATED':
-            return {
-                ...state,
-                user: {
-                    ...state.user,
-                    name: action.name
-                }
-            }
+import axios from 'axios'
+import React, { useEffect, useState } from 'react'
+import ReactDOM from 'react-dom/client';
 
-        default:
-            return state
+// Types
+type PhotoType = {
+    albumId: string
+    id: string
+    title: string
+    url: string
+}
+
+type PayloadType = {
+    title: string
+    url?: string
+}
+
+// Api
+const instance = axios.create({baseURL: 'https://exams-frontend.kimitsu.it-incubator.ru/api/'})
+
+const photoId = '637df6dc99fdc52af974a517'
+
+const photosAPI = {
+    getPhoto() {
+        return instance.get<PhotoType>(`photos/${photoId}`)
+    },
+    updatePhoto(payload: PayloadType) {
+        return instance.put<PhotoType>(`photos/${photoId}`, payload)
     }
 }
 
-const updateUserNameAC = (name: string) => ({type: 'USER-NAME-UPDATED', name})
 
+// App
+export const App = () => {
 
-const state = {
-    count: 10,
-    user: {
-        name: 'Dimych',
-        age: 18,
-        isMarried: true,
-        status: "offline"
-    },
-    books: ['you don\'t know JS']
+    const [photo, setPhoto] = useState<PhotoType | null>(null)
+
+    useEffect(() => {
+        photosAPI.getPhoto()
+            .then((res) => {
+                setPhoto(res.data)
+            })
+    }, [])
+
+    const updatePhotoHandler = () => {
+        // ❗ title и url указаны в качестве заглушки. Server сам сгенерирует новый title
+        const payload = {
+            title: 'Новый title',
+            url: 'data:image/png;base64,iVBORw0FAKEADDRESSnwMZAABJRUrkJggg=='
+        }
+        photosAPI.updatePhoto(payload)
+            .then((res) => {
+                setPhoto(res.data)
+            })
+    };
+
+    return (
+        <>
+            <h1>📸 Фото</h1>
+            <div>
+                <div style={{marginBottom: '15px'}}>
+                    <h1>title: {photo?.title}</h1>
+                    <div><img src={photo?.url} alt=""/></div>
+                </div>
+                <button style={{marginLeft: '15px'}}
+                        onClick={updatePhotoHandler}>
+                    Изменить title
+                </button>
+            </div>
+        </>
+    )
 }
-const newState = reducer(state, updateUserNameAC('Dmitry'))
-
-console.log(newState.user.name === 'Dmitry')
-console.log(newState.books === state.books)
-console.log(newState.user !== state.user)
-
-//Что нужно написать вместо XXX, чтобы корректно обновить имя пользователя и в консоли увидеть:  true true true?
 
 
+const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
+root.render(<App/>)
