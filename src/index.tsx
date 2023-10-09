@@ -1,76 +1,128 @@
-import axios from 'axios'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client';
+import { applyMiddleware, combineReducers, legacy_createStore as createStore } from 'redux'
+import thunk, { ThunkAction, ThunkDispatch } from 'redux-thunk';
+import { Provider, TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux'
+import axios from 'axios';
 
 // Types
-type PhotoType = {
-    albumId: string
+type PostType = {
+    body: string
     id: string
     title: string
-    url: string
+    userId: string
 }
 
 type PayloadType = {
     title: string
-    url?: string
+    body?: string
 }
+
 
 // Api
 const instance = axios.create({baseURL: 'https://exams-frontend.kimitsu.it-incubator.ru/api/'})
 
-const photoId = '637df6dc99fdc52af974a517'
-
-const photosAPI = {
-    getPhoto() {
-        return instance.get<PhotoType>(`photos/${photoId}`)
+const postsAPI = {
+    getPosts() {
+        return instance.get<PostType[]>('posts')
     },
-    updatePhoto(payload: PayloadType) {
-        return instance.put<PhotoType>(`photos/${photoId}`, payload)
+    updatePostTitle(postId: string, post: PayloadType) {
+        return instance.put<PostType>(`posts/${postId}`, post)
     }
 }
 
 
-// App
-export const App = () => {
+// Reducer
+const initState = [] as PostType[]
 
-    const [photo, setPhoto] = useState<PhotoType | null>(null)
+type InitStateType = typeof initState
+
+const postsReducer = (state: InitStateType = initState, action: ActionsType): InitStateType => {
+    switch (action.type) {
+        case 'POSTS/GET-POSTS':
+            return action.posts
+
+        case 'POSTS/UPDATE-POST-TITLE':
+            return state.map((p) => {
+                if (p.id === action.post.id) {
+                    return {...p, title: action.post.title}
+                } else {
+                    return p
+                }
+            })
+
+        default:
+            return state
+    }
+}
+
+const getPostsAC = (posts: PostType[]) => ({type: 'POSTS/GET-POSTS', posts} as const)
+const updatePostTitleAC = (post: PostType) => ({type: 'POSTS/UPDATE-POST-TITLE', post} as const)
+type ActionsType = ReturnType<typeof getPostsAC> | ReturnType<typeof updatePostTitleAC>
+
+const getPostsTC = (): AppThunk => (dispatch) => {
+    postsAPI.getPosts()
+        .then((res) => {
+            dispatch(getPostsAC(res.data))
+        })
+}
+
+const updatePostTC = (postId: string): AppThunk => (dispatch, getState: any) => {
+    try {
+        const currentPost = getState().posts.find((p: PostType) => p.id === postId)
+
+        if (currentPost) {
+            const payload = {title: 'Это просто заглушка. Backend сам сгенерирует новый title'}
+            postsAPI.updatePostTitle(postId, payload)
+                .then((res) => {
+                    dispatch(updatePostTitleAC(res.data))
+                })
+        }
+    } catch (e) {
+        alert('Обновить пост не удалось 😢')
+    }
+
+}
+
+// Store
+const rootReducer = combineReducers({
+    posts: postsReducer,
+})
+
+const store = createStore(rootReducer, applyMiddleware(thunk))
+type RootState = ReturnType<typeof store.getState>
+type AppDispatch = ThunkDispatch<RootState, unknown, ActionsType>
+type AppThunk<ReturnType = void> = ThunkAction<ReturnType, RootState, unknown, ActionsType>
+const useAppDispatch = () => useDispatch<AppDispatch>()
+const useAppSelector: TypedUseSelectorHook<RootState> = useSelector
+
+// App
+const App = () => {
+    const dispatch = useAppDispatch()
+    const posts = useAppSelector(state => state.posts)
 
     useEffect(() => {
-        photosAPI.getPhoto()
-            .then((res) => {
-                setPhoto(res.data)
-            })
+        dispatch(getPostsTC())
     }, [])
 
-    const updatePhotoHandler = () => {
-        // ❗ title и url указаны в качестве заглушки. Server сам сгенерирует новый title
-        const payload = {
-            title: 'Новый title',
-            url: 'data:image/png;base64,iVBORw0FAKEADDRESSnwMZAABJRUrkJggg=='
-        }
-        photosAPI.updatePhoto(payload)
-            .then((res) => {
-                setPhoto(res.data)
-            })
-    };
+    const updatePostHandler = (postId: string) => {
+        dispatch(updatePostTC(postId))
+    }
 
     return (
         <>
-            <h1>📸 Фото</h1>
-            <div>
-                <div style={{marginBottom: '15px'}}>
-                    <h1>title: {photo?.title}</h1>
-                    <div><img src={photo?.url} alt=""/></div>
-                </div>
-                <button style={{marginLeft: '15px'}}
-                        onClick={updatePhotoHandler}>
-                    Изменить title
-                </button>
-            </div>
+            <h1>📜 Список постов</h1>
+            {
+                posts.map(p => {
+                    return <div key={p.id}>
+                        <b>title</b>: {p.title}
+                        <button onClick={() => updatePostHandler(p.id)}>Обновить пост</button>
+                    </div>
+                })
+            }
         </>
     )
 }
 
-
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
-root.render(<App/>)
+root.render(<Provider store={store}> <App/></Provider>)
