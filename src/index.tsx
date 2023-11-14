@@ -1,92 +1,76 @@
-import React, { useEffect } from 'react'
+import React, { useState } from 'react'
 import ReactDOM from 'react-dom/client';
-import { applyMiddleware, combineReducers, legacy_createStore as createStore } from 'redux'
+import { Provider, TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux';
+import axios, { } from 'axios';
+import { applyMiddleware, combineReducers, legacy_createStore as createStore } from 'redux';
 import thunk, { ThunkAction, ThunkDispatch } from 'redux-thunk';
-import { Provider, TypedUseSelectorHook, useDispatch, useSelector } from 'react-redux'
-import axios from 'axios';
+
 
 // Types
-type PostType = {
-    body: string
-    id: string
-    title: string
-    userId: string
+type NullableType<T> = null | T
+
+type LoginFieldsType = {
+    email: string
+    password: string
 }
 
-type PayloadType = {
-    title: string
-    body?: string
-}
-
-
-// Api
+// API
 const instance = axios.create({baseURL: 'https://exams-frontend.kimitsu.it-incubator.ru/api/'})
 
-const postsAPI = {
-    getPosts() {
-        return instance.get<PostType[]>('posts')
+const api = {
+    login(data: LoginFieldsType) {
+        return instance.post('auth/login', data)
     },
-    updatePostTitle(postId: string, post: PayloadType) {
-        return instance.put<PostType>(`posts/${postId}`, post)
-    }
 }
 
 
 // Reducer
-const initState = [] as PostType[]
+const initState = {
+    isLoading: false,
+    error: null as NullableType<string>,
+    isLoggedIn: false,
+}
 
 type InitStateType = typeof initState
 
-const postsReducer = (state: InitStateType = initState, action: ActionsType): InitStateType => {
+const appReducer = (state: InitStateType = initState, action: ActionsType): InitStateType => {
     switch (action.type) {
-        case 'POSTS/GET-POSTS':
-            return action.posts
-
-        case 'POSTS/UPDATE-POST-TITLE':
-            return state.map((p) => {
-                if (p.id === action.post.id) {
-                    return {...p, title: action.post.title}
-                } else {
-                    return p
-                }
-            })
-
+        case 'APP/SET-IS-LOGGED-IN':
+            return {...state, isLoggedIn: action.isLoggedIn}
+        case 'APP/IS-LOADING':
+            return {...state, isLoading: action.isLoading}
+        case 'APP/SET-ERROR':
+            return {...state, error: action.error}
         default:
             return state
     }
 }
 
-const getPostsAC = (posts: PostType[]) => ({type: 'POSTS/GET-POSTS', posts} as const)
-const updatePostTitleAC = (post: PostType) => ({type: 'POSTS/UPDATE-POST-TITLE', post} as const)
-type ActionsType = ReturnType<typeof getPostsAC> | ReturnType<typeof updatePostTitleAC>
+// Actions
+const setIsLoggedIn = (isLoggedIn: boolean) => ({type: 'APP/SET-IS-LOGGED-IN', isLoggedIn} as const)
+const setLoadingAC = (isLoading: boolean) => ({type: 'APP/IS-LOADING', isLoading} as const)
+const setError = (error: string | null) => ({type: 'APP/SET-ERROR', error} as const)
+type ActionsType = | ReturnType<typeof setIsLoggedIn> | ReturnType<typeof setLoadingAC> | ReturnType<typeof setError>
 
-const getPostsTC = (): AppThunk => (dispatch) => {
-    postsAPI.getPosts()
+// Thunk
+const loginTC = (values: LoginFieldsType): AppThunk => (dispatch) => {
+    dispatch(setLoadingAC(true))
+    api.login(values)
         .then((res) => {
-            dispatch(getPostsAC(res.data))
+            dispatch(setIsLoggedIn(true))
+            alert('Вы залогинились успешно')
+
         })
-}
-
-const updatePostTC = (postId: string): AppThunk => (dispatch, getState: any) => {
-    try {
-        const currentPost = getState().posts.find((p: PostType) => p.id === postId)
-
-        if (currentPost) {
-            const payload = {title: 'Это просто заглушка. Backend сам сгенерирует новый title'}
-            postsAPI.updatePostTitle(postId, payload)
-                .then((res) => {
-                    dispatch(updatePostTitleAC(res.data))
-                })
-        }
-    } catch (e) {
-        alert('Обновить пост не удалось 😢')
-    }
-
+        .catch((e) => {
+        })
+        .finally(() => {
+            dispatch(setLoadingAC(false))
+        })
 }
 
 // Store
 const rootReducer = combineReducers({
-    posts: postsReducer,
+    app: appReducer,
 })
 
 const store = createStore(rootReducer, applyMiddleware(thunk))
@@ -96,33 +80,69 @@ type AppThunk<ReturnType = void> = ThunkAction<ReturnType, RootState, unknown, A
 const useAppDispatch = () => useDispatch<AppDispatch>()
 const useAppSelector: TypedUseSelectorHook<RootState> = useSelector
 
+
+// Loader
+export const Loader = () => {
+    return <h1>Loading ...</h1>
+}
+
 // App
-const App = () => {
+export const App = () => {
+
     const dispatch = useAppDispatch()
-    const posts = useAppSelector(state => state.posts)
 
-    useEffect(() => {
-        dispatch(getPostsTC())
-    }, [])
+    const [form, setForm] = useState<LoginFieldsType>({email: '', password: ''})
 
-    const updatePostHandler = (postId: string) => {
-        dispatch(updatePostTC(postId))
-    }
+    const error = useAppSelector(state => state.app.error)
+    const isLoading = useAppSelector(state => state.app.isLoading)
+
+    const changeFormValuesHandler = (e: React.ChangeEvent<HTMLInputElement>, field: string) => {
+        if (field === 'email') {
+            setForm({...form, email: e.currentTarget.value})
+        }
+        if (field === 'password') {
+            setForm({...form, password: e.currentTarget.value})
+        }
+    };
+
+    const submitForm = (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.preventDefault()
+        dispatch(loginTC(form))
+    };
 
     return (
-        <>
-            <h1>📜 Список постов</h1>
-            {
-                posts.map(p => {
-                    return <div key={p.id}>
-                        <b>title</b>: {p.title}
-                        <button onClick={() => updatePostHandler(p.id)}>Обновить пост</button>
-                    </div>
-                })
-            }
-        </>
-    )
+        <div>
+            {!!error && <h2 style={{color: 'red'}}>{error}</h2>}
+            {isLoading && <Loader/>}
+            <form>
+                <div>
+                    <input placeholder={'Введите email'}
+                           value={form.email}
+                           onChange={(e) => changeFormValuesHandler(e, 'email')}
+                    />
+                </div>
+                <div>
+                    <input type={'password'}
+                           placeholder={'Введите пароль'}
+                           value={form.password}
+                           onChange={(e) => changeFormValuesHandler(e, 'password')}
+                    />
+                </div>
+                <button type="submit" onClick={submitForm}>Залогиниться</button>
+            </form>
+        </div>
+    );
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(<Provider store={store}> <App/></Provider>)
+
+//📜 Описание:
+
+//Перед вами форма логинизации. Введите любые логин и пароль и попробуйте залогиниться.
+// У вас это навряд ли получится 😈, т.к. вы не знаете email и пароль.
+// Откройте Network и проанализируйте запрос.
+// Задача: вывести сообщение об ошибке,
+// которую возвращает сервера говорящую о том что email или password некорректны.
+// ❗ Типизировать ошибку не надо, т.к. там есть много нюансов, о которых вы узнаете позже
+// **🖥 Пример ответа: dispatch('Error message')**
